@@ -202,6 +202,16 @@ class SentimentAnalyzer:
             elif trajectory_info['trajectory'] == 'declining' and sentiment == "Negative":
                 sentiment = "Negative (Escalating)"
         
+        # Calculate sentiment distribution for breakdown
+        pos_count = sum(1 for s, _ in individual_scores if s > 0.05)
+        neg_count = sum(1 for s, _ in individual_scores if s < -0.05)
+        neu_count = len(individual_scores) - pos_count - neg_count
+        
+        total_msgs = len(individual_scores)
+        pos_pct = pos_count / total_msgs if total_msgs > 0 else 0
+        neg_pct = neg_count / total_msgs if total_msgs > 0 else 0
+        neu_pct = neu_count / total_msgs if total_msgs > 0 else 0
+        
         # Generate summary
         summary = self._generate_summary(sentiment, weighted_compound, len(messages), trajectory_info)
         
@@ -211,7 +221,10 @@ class SentimentAnalyzer:
             "summary": summary,
             "message_count": len(messages),
             "trajectory": trajectory_info['trajectory'],
-            "trajectory_details": trajectory_info
+            "trajectory_details": trajectory_info,
+            "pos": pos_pct,
+            "neu": neu_pct,
+            "neg": neg_pct
         }
     
     def _generate_summary(self, sentiment: str, compound: float, num_messages: int, trajectory: dict) -> str:

@@ -21,7 +21,7 @@ class ConversationManager:
             speaker: "user" or "bot"
             message: The message text
             sentiment: Sentiment label (for user messages)
-            scores: VADER scores dict (for user messages)
+            scores: Scores dict (for user messages)
         """
         entry = {
             "timestamp": datetime.now().strftime("%H:%M:%S"),
@@ -32,7 +32,12 @@ class ConversationManager:
         # Add sentiment data for user messages
         if sentiment:
             entry["sentiment"] = sentiment
-            entry["compound"] = round(scores['compound'], 3) if scores else 0.0
+            entry["compound"] = round(scores.get('compound', 0), 3) if scores else 0.0
+            
+            # Store irony detection info if available
+            if 'irony_detected' in scores:
+                entry['irony_detected'] = scores['irony_detected']
+                entry['irony_confidence'] = scores.get('irony_confidence', 0)
         
         self.conversation.append(entry)
         

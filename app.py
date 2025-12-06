@@ -32,11 +32,29 @@ def display_header():
 
 
 def display_conversation():
-    """Display the conversation history."""
+    """Display the conversation history with real-time sentiment (Tier 2)."""
     for msg in st.session_state.conversation.get_conversation():
         if msg["speaker"] == "user":
             with st.chat_message("user"):
                 st.write(msg["message"])
+                
+                # Tier 2: Display sentiment under each user message
+                sentiment = msg.get("sentiment", "N/A")
+                compound = msg.get("compound", 0)
+                
+                # Emoji and color based on sentiment
+                if sentiment == "Positive":
+                    emoji = "😊"
+                    color = "green"
+                elif sentiment == "Negative":
+                    emoji = "😞"
+                    color = "red"
+                else:
+                    emoji = "😐"
+                    color = "gray"
+                
+                # Display sentiment inline
+                st.caption(f":{color}[{emoji} **{sentiment}** (score: {compound:.2f})]")
         else:
             with st.chat_message("assistant"):
                 st.write(msg["message"])
@@ -55,10 +73,112 @@ def handle_user_input(user_input: str):
     st.session_state.conversation.add_message("bot", bot_response)
 
 
+def generate_mood_shift_summary(user_messages):
+    """Generate a natural language summary of mood shifts (UI display only)."""
+    if len(user_messages) < 2:
+        return "📊 Not enough messages to detect mood shifts."
+    
+    # READ existing analyzed data - no new analysis
+    sentiments = [msg.get('compound', 0) for msg in user_messages]
+    labels = [msg.get('sentiment', 'Neutral') for msg in user_messages]
+    
+    first_sentiment = sentiments[0]
+    last_sentiment = sentiments[-1]
+    first_label = labels[0]
+    last_label = labels[-1]
+    
+    # Negative → Positive shift
+    if first_sentiment < -0.05 and last_sentiment > 0.05:
+        for i, score in enumerate(sentiments):
+            if score > 0.05:
+                return f"🔄 **Mood Shift:** Started {first_label.lower()} → improved to {last_label.lower()} by message {i + 1}"
+    
+    # Positive → Negative shift
+    elif first_sentiment > 0.05 and last_sentiment < -0.05:
+        for i, score in enumerate(sentiments):
+            if score < -0.05:
+                return f"📉 **Mood Shift:** Started {first_label.lower()} → declined to {last_label.lower()} by message {i + 1}"
+    
+    # Consistent positive
+    elif all(s > 0.05 for s in sentiments):
+        return "😊 **Consistent Mood:** Positive throughout the conversation"
+    
+    # Consistent negative
+    elif all(s < -0.05 for s in sentiments):
+        return "😞 **Consistent Mood:** Negative throughout the conversation"
+    
+    # Consistent neutral
+    elif all(-0.05 <= s <= 0.05 for s in sentiments):
+        return "😐 **Consistent Mood:** Neutral throughout the conversation"
+    
+    # Mixed
+    else:
+        pos_count = sum(1 for s in sentiments if s > 0.05)
+        neg_count = sum(1 for s in sentiments if s < -0.05)
+        neu_count = len(sentiments) - pos_count - neg_count
+        return f"🔀 **Fluctuating Mood:** Mixed emotions ({pos_count} positive, {neu_count} neutral, {neg_count} negative)"
+
+
+def display_tier2_analysis():
+    """Display message-level sentiment analysis (Tier 2)."""
+    st.markdown("---")
+    st.subheader("📝 Message-Level Sentiment Analysis (Tier 2)")
+    
+    user_messages = [msg for msg in st.session_state.conversation.get_conversation() if msg["speaker"] == "user"]
+    
+    if not user_messages:
+        st.info("No messages to analyze yet.")
+        return
+    
+    # --- BONUS: Mood Shift Summary ---
+    mood_summary = generate_mood_shift_summary(user_messages)
+    st.info(mood_summary)
+    
+    # Create a table view
+    st.markdown("##### Individual Message Breakdown:")
+    
+    for i, msg in enumerate(user_messages, 1):
+        sentiment = msg.get("sentiment", "N/A")
+        compound = msg.get("compound", 0)
+        timestamp = msg.get("timestamp", "N/A")
+        
+        # Emoji based on sentiment
+        if sentiment == "Positive":
+            emoji = "😊"
+            color = "green"
+        elif sentiment == "Negative":
+            emoji = "😞"
+            color = "red"
+        else:
+            emoji = "😐"
+            color = "gray"
+        
+        # Display each message in an expander
+        with st.expander(f"Message {i}: \"{msg['message'][:50]}...\" {emoji}"):
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Sentiment", f"{emoji} {sentiment}")
+            
+            with col2:
+                st.metric("Score", f"{compound:.3f}")
+            
+            with col3:
+                st.metric("Time", timestamp)
+            
+            # Show full message
+            st.markdown(f"**Full Message:** {msg['message']}")
+            
+            # Show irony detection if available
+            if 'irony_detected' in msg:
+                irony_status = "🎭 Yes" if msg.get('irony_detected') else "✓ No"
+                st.caption(f"Irony/Sarcasm Detected: {irony_status}")
+
+
 def display_tier1_analysis():
     """Display overall conversation analysis (Tier 1)."""
     st.markdown("---")
-    st.subheader("📊 Conversation Analysis")
+    st.subheader("📊 Overall Conversation Analysis (Tier 1)")
     
     # Get overall sentiment analysis
     user_msgs = st.session_state.conversation.get_user_messages()
@@ -66,9 +186,9 @@ def display_tier1_analysis():
     
     # Parse sentiment for display
     sentiment = overall["sentiment"]
-    base_sentiment = sentiment.split(" ")[0]  # Get base (Positive/Negative/Neutral)
+    base_sentiment = sentiment.split(" ")[0]
     
-    # Emoji based on base sentiment
+    # Emoji based on sentiment keywords
     if "Positive" in sentiment:
         emoji = "😊"
     elif "Negative" in sentiment:
@@ -88,21 +208,24 @@ def display_tier1_analysis():
         traj_emoji = "➡️"
         traj_text = "Stable"
     
-    # Display sentiment metrics - 4 columns now
-    col1, col2, col3, col4 = st.columns(4)
+    # Adjusted weights: [1.5, 1, 1.5, 1]
+    # This gives Sentiment and Trajectory 50% more space than Score and Messages
+    col1, col2, col3, col4 = st.columns([1.5, 1, 1.5, 1])
     
     with col1:
-        st.metric("Overall Sentiment", f"{emoji} {base_sentiment}")
+        # FIX: Only truncate if the text is very long, otherwise show full text
+        sentiment_display = sentiment if len(sentiment) < 20 else base_sentiment
+        st.metric("Overall Sentiment", f"{emoji} {sentiment_display}", help="Overall emotional tone")
     
     with col2:
-        st.metric("Compound Score", f"{overall['compound']:.3f}")
-    
+        st.metric("Compound Score", f"{overall['compound']:.3f}", help="Sentiment intensity")
+        
     with col3:
-        st.metric("Trajectory", f"{traj_emoji} {traj_text}")
-    
+        st.metric("Trajectory", f"{traj_emoji} {traj_text}", help="How sentiment changed")
+        
     with col4:
-        st.metric("Messages", overall["message_count"])
-    
+        st.metric("Messages", overall["message_count"], help="Total user messages")
+
     # Show status tag if resolved/escalating
     if "(Resolved)" in sentiment:
         st.success("✅ **Status: Issue Resolved** - Conversation ended positively")
@@ -110,50 +233,34 @@ def display_tier1_analysis():
         st.error("⚠️ **Status: Escalating** - Customer dissatisfaction increasing")
     
     # Display summary
-    st.info(f"**Summary:** {overall['summary']}")
+    st.info(f"💬 **Summary:** {overall['summary']}")
     
     # Detailed breakdown
-    with st.expander("📈 Detailed Sentiment Breakdown"):
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Positive", f"{overall['pos']:.1%}")
-        with col2:
-            st.metric("Neutral", f"{overall['neu']:.1%}")
-        with col3:
-            st.metric("Negative", f"{overall['neg']:.1%}")
+    if 'pos' in overall and 'neu' in overall and 'neg' in overall:
+        with st.expander("📈 View Detailed Sentiment Breakdown"):
+            col_a, col_b, col_c = st.columns(3)
+            with col_a:
+                st.metric("😊 Positive", f"{overall['pos']:.1%}", help="Percentage of positive messages")
+            with col_b:
+                st.metric("😐 Neutral", f"{overall['neu']:.1%}", help="Percentage of neutral messages")
+            with col_c:
+                st.metric("😞 Negative", f"{overall['neg']:.1%}", help="Percentage of negative messages")
 
-
-def display_conversation_history():
-    """Display full conversation history with sentiment tracking."""
-    st.markdown("---")
-    st.subheader("💬 Conversation History")
-    
-    for msg in st.session_state.conversation.get_conversation():
-        if msg["speaker"] == "user":
-            sentiment = msg.get("sentiment", "N/A")
-            compound = msg.get("compound", 0)
-            
-            # Color code based on sentiment
-            if sentiment == "Positive":
-                color = "green"
-                emoji = "😊"
-            elif sentiment == "Negative":
-                color = "red"
-                emoji = "😞"
-            else:
-                color = "gray"
-                emoji = "😐"
-            
-            st.markdown(f"**You:** {msg['message']}")
-            st.markdown(f"→ Sentiment: :{color}[{emoji} {sentiment}] (score: {compound:.2f})")
-            st.markdown("")
-        else:
-            st.markdown(f"**🤖 Bot:** {msg['message']}")
-            st.markdown("")
 
 
 def main():
     """Main application entry point."""
+    # --- CSS FIX for metric font size ---
+    st.markdown("""
+    <style>
+    /* Target the value part of the metric */
+    [data-testid="stMetricValue"] {
+        font-size: 20px; /* Reduced to prevent truncation */
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    # --- END CSS FIX ---
+
     initialize_session_state()
     display_header()
     
@@ -180,10 +287,10 @@ def main():
             else:
                 st.warning("Please send at least one message before ending the conversation.")
     
-    # Show analysis when conversation ends (Tier 1)
+    # Show analysis when conversation ends (Tier 1 & Tier 2)
     if not st.session_state.chat_active:
-        display_tier1_analysis()
-        display_conversation_history()
+        display_tier2_analysis()  # Tier 2: Message-level
+        display_tier1_analysis()  # Tier 1: Overall conversation
         
         # Export and restart options
         st.markdown("---")
