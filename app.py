@@ -130,7 +130,7 @@ def display_tier2_analysis():
         st.info("No messages to analyze yet.")
         return
     
-    # --- BONUS: Mood Shift Summary ---
+    #  BONUS: Mood Shift Summary
     mood_summary = generate_mood_shift_summary(user_messages)
     st.info(mood_summary)
     
@@ -250,7 +250,7 @@ def display_tier1_analysis():
 
 def main():
     """Main application entry point."""
-    # --- CSS FIX for metric font size ---
+    # --- CSS FIX for metric font size
     st.markdown("""
     <style>
     /* Target the value part of the metric */
@@ -259,7 +259,6 @@ def main():
     }
     </style>
     """, unsafe_allow_html=True)
-    # --- END CSS FIX ---
 
     initialize_session_state()
     display_header()
